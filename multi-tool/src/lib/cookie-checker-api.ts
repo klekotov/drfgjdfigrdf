@@ -327,24 +327,20 @@ export type CookieRunResponse = {
   results: CookieCheckAccount[];
 };
 
-async function runCookieCheck(
-  mode: ValidateMode,
-  cookies: string[],
-  signal?: AbortSignal,
-) {
-  const isValidate = mode === 'validate';
-  const endpoint = isValidate ? '/validate-batch' : '/refresh-batch';
-  const payload = await postJson(endpoint, { cookies }, signal);
+// Both modes post to /validate-batch: it costs a single request per cookie.
+// /refresh-batch would additionally hit currency, settings, cards and two
+// inventory endpoints per cookie, which this view does not display.
+async function runCookieCheck(cookies: string[], signal?: AbortSignal) {
+  const payload = await postJson('/validate-batch', { cookies }, signal);
 
   if (!Array.isArray(payload.results)) {
     throw new Error('API сервер вернул ответ без списка результатов.');
   }
 
   const results = readResults(payload);
-  const passedKey = isValidate ? 'valid' : 'refreshed';
   const passed = readCount(
     payload,
-    passedKey,
+    'valid',
     results.filter((account) => account.valid).length,
   );
 
@@ -352,16 +348,16 @@ async function runCookieCheck(
     ok: payload.ok !== false,
     total: readCount(payload, 'total', results.length),
     passed,
-    failed: readCount(payload, 'failed', results.length - passed),
+    failed: readCount(payload, 'invalid', results.length - passed),
     elapsed: typeof payload.elapsed === 'string' ? payload.elapsed : undefined,
     results,
   } satisfies CookieRunResponse;
 }
 
 export function validateCookiesViaApi(cookies: string[], signal?: AbortSignal) {
-  return runCookieCheck('validate', cookies, signal);
+  return runCookieCheck(cookies, signal);
 }
 
 export function refreshCookiesViaApi(cookies: string[], signal?: AbortSignal) {
-  return runCookieCheck('refresh', cookies, signal);
+  return runCookieCheck(cookies, signal);
 }

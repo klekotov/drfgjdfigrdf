@@ -706,18 +706,6 @@ function CookieRunView({
   const accounts = result?.results ?? [];
   const validCount = accounts.filter((account) => account.valid).length;
   const invalidCount = accounts.length - validCount;
-  const totalRobux = accounts.reduce(
-    (sum, account) => sum + (typeof account.balance === 'number' ? account.balance : 0),
-    0,
-  );
-  const premiumCount = accounts.filter((account) => account.premium === true).length;
-  const cardCount = accounts.reduce(
-    (sum, account) =>
-      sum + (Array.isArray(account.cards) ? account.cards.length : 0),
-    0,
-  );
-  const korbloxCount = accounts.filter((account) => account.korblox === true).length;
-  const headlessCount = accounts.filter((account) => account.headless === true).length;
 
   const progressTotal = result?.total ?? cookies.length;
   const progressDone = result?.passed ?? 0;
@@ -726,17 +714,15 @@ function CookieRunView({
     : 0;
 
   const statusLabel = status === 'checking'
-    ? (isValidate ? 'Проверка cookie через сервер' : 'Обновление данных через сервер')
+    ? 'Проверка cookie через сервер'
     : status === 'success'
-      ? (isValidate ? 'Проверка завершена' : 'Данные обновлены')
+      ? 'Проверка завершена'
       : status === 'error'
         ? 'Ошибка запроса'
         : 'Ожидание запуска';
 
   const title = isValidate ? 'Validator' : 'Refresher';
-  const subtitle = isValidate
-    ? 'Проверка cookie на валидность'
-    : 'Актуализация баланса, Premium и карт';
+  const subtitle = 'Проверка cookie на валидность';
 
   const stats = [
     { label: 'Valid', value: validCount, icon: ShieldCheck, accent: 'text-[#7de5b4]' },
@@ -744,22 +730,6 @@ function CookieRunView({
     { label: 'Duplicates', value: duplicateCount, icon: Copy, accent: 'text-[#f5c394]' },
     { label: 'Total', value: result?.total ?? cookies.length, icon: Cookie, accent: 'text-[#8fb8ff]' },
   ];
-
-  const details = isValidate
-    ? [
-        { label: 'Robux', value: totalRobux, icon: Coins },
-        { label: 'Premium', value: premiumCount, icon: Crown },
-        { label: 'Cards', value: cardCount, icon: WalletCards },
-        { label: 'Korblox', value: korbloxCount, icon: ShieldCheck },
-        { label: 'Headless', value: headlessCount, icon: ShieldUser },
-      ]
-    : [
-        { label: 'Robux', value: totalRobux, icon: Coins },
-        { label: 'Premium', value: premiumCount, icon: Crown },
-        { label: 'Cards', value: cardCount, icon: WalletCards },
-        { label: 'Korblox', value: korbloxCount, icon: ShieldCheck },
-        { label: 'Headless', value: headlessCount, icon: ShieldUser },
-      ];
 
   return (
     <div
@@ -835,18 +805,6 @@ function CookieRunView({
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {details.map(({ label, value, icon: Icon }) => (
-            <div key={label} className="rounded-xl border border-[#332c28] bg-[#1b1b1f] px-3 py-3 transition-colors hover:border-[#68452d]">
-              <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[.12em] text-[#8c7d73]">
-                <Icon size={13} className="text-primary" />
-                {label}
-              </div>
-              <div className="mt-2 font-mono text-lg font-bold text-[#e2d9d1]">{value}</div>
-            </div>
-          ))}
-        </div>
-
         <section className="mt-6">
           <div className="mb-3 flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#624129] bg-[#2b211b] text-primary">
@@ -905,26 +863,7 @@ function CookieRunView({
                     </div>
                   </div>
 
-                  {account.valid && !isValidate && (
-                    <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-[#2a3a32] pt-2.5">
-                      {[
-                        { label: 'Robux', value: account.balance ?? 0 },
-                        { label: 'Premium', value: account.premium === true ? 'да' : 'нет' },
-                        { label: 'Cards', value: Array.isArray(account.cards) ? account.cards.length : 0 },
-                        { label: 'Korblox', value: account.korblox === true ? 'да' : 'нет' },
-                        { label: 'Headless', value: account.headless === true ? 'да' : 'нет' },
-                      ].map((item) => (
-                        <span
-                          key={item.label}
-                          className="rounded-md border border-[#2f4a3d] bg-[#1b2a23] px-2 py-0.5 text-[9px] font-semibold text-[#a8d8c1]"
-                        >
-                          {item.label}: <span className="font-mono">{item.value}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {account.valid && isValidate && (
+                  {account.valid && (
                     <div className="mt-2.5 border-t border-[#2a3a32] pt-2.5">
                       <span className="rounded-md border border-[#2f4a3d] bg-[#1b2a23] px-2 py-0.5 text-[9px] font-semibold text-[#a8d8c1]">
                         Cookie действителен
@@ -1738,11 +1677,9 @@ function ModeMenu({
       : mode === 'validate'
         ? 'Запустить валидацию'
         : 'Запустить обновление';
-    const hintLabel = mode === 'refresh'
-      ? 'Cookie обновляют баланс, Premium и карты'
-      : isCheck
-        ? 'Cookie автоматически извлекаются из текста'
-        : 'Cookie проверяются на валидность через API';
+    const hintLabel = isCheck
+      ? 'Cookie автоматически извлекаются из текста'
+      : 'Cookie проверяются на валидность через API';
 
     const handleDrop = (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
