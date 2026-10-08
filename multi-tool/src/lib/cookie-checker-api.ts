@@ -316,7 +316,7 @@ export async function checkCookiesViaApi(
   } satisfies CookieCheckResponse;
 }
 
-export type ValidateMode = 'validate' | 'refresh';
+export type ValidateMode = 'validate';
 
 export type CookieRunResponse = {
   ok: boolean;
@@ -327,7 +327,7 @@ export type CookieRunResponse = {
   results: CookieCheckAccount[];
 };
 
-// Both modes post to /validate-batch: it costs a single request per cookie.
+// Posts to /validate-batch: it costs a single request per cookie.
 // /refresh-batch would additionally hit currency, settings, cards and two
 // inventory endpoints per cookie, which this view does not display.
 async function runCookieCheck(cookies: string[], signal?: AbortSignal) {
@@ -355,9 +355,5 @@ async function runCookieCheck(cookies: string[], signal?: AbortSignal) {
 }
 
 export function validateCookiesViaApi(cookies: string[], signal?: AbortSignal) {
-  return runCookieCheck(cookies, signal);
-}
-
-export function refreshCookiesViaApi(cookies: string[], signal?: AbortSignal) {
   return runCookieCheck(cookies, signal);
 }

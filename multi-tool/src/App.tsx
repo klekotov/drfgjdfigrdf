@@ -4,7 +4,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ErrorBoundary } from '@/components/error-boundary';
 import {
   checkCookiesViaApi,
-  refreshCookiesViaApi,
   validateCookiesViaApi,
   type CookieCheckResponse,
   type CookieRunResponse,
@@ -60,7 +59,7 @@ import {
 
 const queryClient = new QueryClient();
 
-type View = 'dashboard' | 'settings' | 'looter' | 'auto-cookie' | 'cookie-checker' | 'validator' | 'refresher' | 'duplicator';
+type View = 'dashboard' | 'settings' | 'looter' | 'auto-cookie' | 'cookie-checker' | 'validator' | 'duplicator';
 const GAME_IDS_STORAGE_KEY = 'multi-tool-cookie-checker-game-ids';
 const GAME_CHECKS_STORAGE_KEY = 'multi-tool-cookie-checker-game-checks';
 
@@ -131,7 +130,7 @@ const modeOptions: { name: string; description: string; icon: LucideIcon }[] = [
   { name: 'Passport Generator', description: 'В работе', icon: IdCard },
   { name: 'Vbiv', description: 'В работе', icon: CreditCard },
   { name: 'Validator', description: 'В работе', icon: BadgeCheck },
-  { name: 'Refresher', description: 'В работе', icon: RefreshCw },
+
   { name: 'Duplicator', description: 'В работе', icon: Copy },
   { name: 'Bypasser', description: 'В работе', icon: ShieldOff },
 ];
@@ -686,14 +685,7 @@ function exportCookieFile(
 
 type CheckRunStatus = 'idle' | 'checking' | 'success' | 'error';
 
-function CookieRunView({
-  files,
-  mode,
-}: {
-  files: CookieFileSummary[];
-  mode: ValidateMode;
-}) {
-  const isValidate = mode === 'validate';
+function CookieRunView({ files }: { files: CookieFileSummary[] }) {
   const allCookies = useMemo(() => files.flatMap((file) => file.cookies), [files]);
   const cookies = useMemo(() => Array.from(new Set(allCookies)), [allCookies]);
   const duplicateCount = allCookies.length - cookies.length;
@@ -716,11 +708,7 @@ function CookieRunView({
     setResult(null);
     setError(null);
 
-    const run = isValidate
-      ? validateCookiesViaApi(cookies, controller.signal)
-      : refreshCookiesViaApi(cookies, controller.signal);
-
-    run
+    validateCookiesViaApi(cookies, controller.signal)
       .then((nextResult) => {
         setResult(nextResult);
         setStatus('success');
@@ -732,7 +720,7 @@ function CookieRunView({
       });
 
     return () => controller.abort();
-  }, [cookies, isValidate]);
+  }, [cookies]);
 
   const accounts = result?.results ?? [];
   const validCount = accounts.filter((account) => account.valid).length;
@@ -752,7 +740,7 @@ function CookieRunView({
         ? 'Ошибка запроса'
         : 'Ожидание запуска';
 
-  const title = isValidate ? 'Validator' : 'Refresher';
+  const title = 'Validator';
   const subtitle = 'Проверка cookie на валидность';
 
   const stats = [
@@ -771,7 +759,7 @@ function CookieRunView({
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#624129] bg-[#2b211b] text-primary">
-              {isValidate ? <BadgeCheck size={18} /> : <RefreshCw size={18} />}
+              <BadgeCheck size={18} />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -785,35 +773,6 @@ function CookieRunView({
               </p>
             </div>
           </div>
-          {!isValidate && (
-            <button
-              type="button"
-              disabled={status !== 'success' || validCount === 0}
-              onClick={() => {
-                // Results keep the input order, so each live cookie maps back
-                // to the entry the server confirmed as valid.
-                const live = cookies.filter((_, index) => accounts[index]?.valid === true);
-                exportCookieFile(
-                  'cookies-refreshed',
-                  live,
-                  [
-                    `# Multi Tool — refreshed cookies`,
-                    `# checked: ${accounts.length}, live: ${live.length}`,
-                    `# Roblox issues no replacement .ROBLOSECURITY tokens,`,
-                    `# so this file holds the cookies the server confirmed as alive.`,
-                  ].join('\n'),
-                );
-              }}
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold transition-colors ${
-                status === 'success' && validCount > 0
-                  ? 'border-[#9b56df] bg-[#8d45d1] text-white hover:bg-[#9b52e6]'
-                  : 'cursor-not-allowed border-[#38313f] bg-[#1c1921] text-[#777c87]'
-              }`}
-            >
-              <Download size={14} />
-              Сохранить в файл ({validCount})
-            </button>
-          )}
         </div>
 
         <section className="relative overflow-hidden rounded-2xl border border-[#3c3028] bg-[#191a1f] p-4 shadow-[0_0_34px_rgba(255,138,36,.08)] sm:p-5">
@@ -1788,7 +1747,6 @@ function ModeMenu({
     | 'bypasser'
     | 'cookie-checker'
     | 'vbiv'
-    | 'refresher'
     | 'validator'
     | 'duplicator'
     | 'passport'
@@ -1838,7 +1796,6 @@ function ModeMenu({
     if (name === 'Bypasser') setActiveMenu('bypasser');
     if (name === 'Cookie Checker') setActiveMenu('cookie-checker');
     if (name === 'Vbiv') setActiveMenu('vbiv');
-    if (name === 'Refresher') setActiveMenu('refresher');
     if (name === 'Validator') setActiveMenu('validator');
     if (name === 'Duplicator') setActiveMenu('duplicator');
     if (name === 'Passport Generator') setActiveMenu('passport');
@@ -2020,7 +1977,7 @@ function ModeMenu({
   const renderModeGrid = () => (
     <div className="grid gap-2 p-3 sm:grid-cols-2">
       {modeOptions.map(({ name, description, icon: Icon }, index) => {
-        const canOpen = ['Cookie Checker', 'Bypasser', 'Vbiv', 'Refresher', 'Validator', 'Duplicator', 'Passport Generator'].includes(name);
+        const canOpen = ['Cookie Checker', 'Bypasser', 'Vbiv', 'Validator', 'Duplicator', 'Passport Generator'].includes(name);
 
         return (
           <button
@@ -2199,10 +2156,6 @@ function ModeMenu({
           <PlaceholderAction accent icon={CheckCircle2} label="Start Vbiv" />
         </MenuActionStack>
       );
-    }
-
-    if (activeMenu === 'refresher') {
-      return renderCookieFiles('refresh');
     }
 
     if (activeMenu === 'duplicator') {
@@ -2503,7 +2456,6 @@ function Router() {
   const [isClosed, setIsClosed] = useState(false);
   const [cookieCheckFiles, setCookieCheckFiles] = useState<CookieFileSummary[]>([]);
   const [validatorFiles, setValidatorFiles] = useState<CookieFileSummary[]>([]);
-  const [refresherFiles, setRefresherFiles] = useState<CookieFileSummary[]>([]);
   const [duplicatorFiles, setDuplicatorFiles] = useState<CookieFileSummary[]>([]);
   const [gameIds, setGameIds] = useState<string[]>(loadGameIds);
   const [gameChecks, setGameChecks] = useState<GameCheckConfig[]>(loadGameChecks);
@@ -2534,12 +2486,9 @@ function Router() {
         if (mode === 'duplicate') {
           setDuplicatorFiles(files);
           setView('duplicator');
-        } else if (mode === 'validate') {
+        } else {
           setValidatorFiles(files);
           setView('validator');
-        } else {
-          setRefresherFiles(files);
-          setView('refresher');
         }
         setStarted(true);
         setModeMenuOpen(false);
@@ -2611,9 +2560,7 @@ function Router() {
             gameChecks={gameChecks}
           />
         ) : view === 'validator' ? (
-          <CookieRunView files={validatorFiles} mode="validate" />
-        ) : view === 'refresher' ? (
-          <CookieRunView files={refresherFiles} mode="refresh" />
+          <CookieRunView files={validatorFiles} />
         ) : view === 'duplicator' ? (
           <DuplicatorView files={duplicatorFiles} />
         ) : (
