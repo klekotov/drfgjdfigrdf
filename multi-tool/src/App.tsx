@@ -60,7 +60,7 @@ import {
 
 const queryClient = new QueryClient();
 
-type View = 'dashboard' | 'settings' | 'looter' | 'auto-cookie' | 'cookie-checker' | 'validator' | 'refresher';
+type View = 'dashboard' | 'settings' | 'looter' | 'auto-cookie' | 'cookie-checker' | 'validator' | 'refresher' | 'duplicator';
 const GAME_IDS_STORAGE_KEY = 'multi-tool-cookie-checker-game-ids';
 const GAME_CHECKS_STORAGE_KEY = 'multi-tool-cookie-checker-game-checks';
 
@@ -653,6 +653,37 @@ async function inspectCookieFile(file: File): Promise<CookieFileSummary> {
   return { name: file.name, ...extractRobloxCookies(contents) };
 }
 
+function stamp() {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+function downloadTextFile(fileName: string, contents: string) {
+  const blob = new Blob([contents], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportCookieFile(
+  prefix: string,
+  cookies: string[],
+  banner?: string,
+) {
+  if (!cookies.length) {
+    return;
+  }
+
+  const body = banner ? `${banner}\n\n${cookies.join('\n')}\n` : `${cookies.join('\n')}\n`;
+  downloadTextFile(`${prefix}-${stamp()}.txt`, body);
+}
+
 type CheckRunStatus = 'idle' | 'checking' | 'success' | 'error';
 
 function CookieRunView({
@@ -754,6 +785,35 @@ function CookieRunView({
               </p>
             </div>
           </div>
+          {!isValidate && (
+            <button
+              type="button"
+              disabled={status !== 'success' || validCount === 0}
+              onClick={() => {
+                // Results keep the input order, so each live cookie maps back
+                // to the entry the server confirmed as valid.
+                const live = cookies.filter((_, index) => accounts[index]?.valid === true);
+                exportCookieFile(
+                  'cookies-refreshed',
+                  live,
+                  [
+                    `# Multi Tool — refreshed cookies`,
+                    `# checked: ${accounts.length}, live: ${live.length}`,
+                    `# Roblox issues no replacement .ROBLOSECURITY tokens,`,
+                    `# so this file holds the cookies the server confirmed as alive.`,
+                  ].join('\n'),
+                );
+              }}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold transition-colors ${
+                status === 'success' && validCount > 0
+                  ? 'border-[#9b56df] bg-[#8d45d1] text-white hover:bg-[#9b52e6]'
+                  : 'cursor-not-allowed border-[#38313f] bg-[#1c1921] text-[#777c87]'
+              }`}
+            >
+              <Download size={14} />
+              Сохранить в файл ({validCount})
+            </button>
+          )}
         </div>
 
         <section className="relative overflow-hidden rounded-2xl border border-[#3c3028] bg-[#191a1f] p-4 shadow-[0_0_34px_rgba(255,138,36,.08)] sm:p-5">
@@ -876,6 +936,167 @@ function CookieRunView({
                       {account.error}
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function DuplicatorView({ files }: { files: CookieFileSummary[] }) {
+  const allCookies = useMemo(() => files.flatMap((file) => file.cookies), [files]);
+  const cookies = useMemo(() => Array.from(new Set(allCookies)), [allCookies]);
+  const fileCount = files.length;
+  const [copies, setCopies] = useState(2);
+  const [separators, setSeparators] = useState(true);
+
+  const output = useMemo(() => {
+    if (!cookies.length) return [];
+    const lines: string[] = [];
+    for (let copy = 0; copy < copies; copy += 1) {
+      for (const cookie of cookies) {
+        lines.push(cookie);
+        if (separators && copy < copies - 1) lines.push('');
+      }
+    }
+    return lines;
+  }, [cookies, copies, separators]);
+
+  const stats = [
+    { label: 'Unique', value: cookies.length, icon: Cookie, accent: 'text-[#8fb8ff]' },
+    { label: 'Copies', value: copies, icon: Copy, accent: 'text-[#c49bff]' },
+    { label: 'Output lines', value: output.length, icon: FileText, accent: 'text-[#f5c394]' },
+    { label: 'Files', value: fileCount, icon: WalletCards, accent: 'text-[#a7acb5]' },
+  ];
+
+  return (
+    <div
+      className="tab-view min-h-full flex-1 overflow-auto bg-[#17191f] p-4 text-[#e7e2da] sm:p-6"
+      aria-label="Duplicator"
+    >
+      <div className="mx-auto max-w-[1180px]">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#3d2f4a] bg-[#241a30] text-[#bb7cff]">
+              <Copy size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-bold text-[#f0ebe3]">Duplicator</h1>
+                <span className="rounded-full border border-[#4b3a5e] bg-[#2a2136] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.08em] text-[#cbb2e8]">
+                  Offline
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-[#777c87]">
+                Дублирование cookie без обращения к серверу · {fileCount}{' '}
+                {fileCount === 1 ? 'файл' : 'файла'} · {cookies.length} уникальных
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={!output.length}
+            onClick={() =>
+              exportCookieFile(
+                'cookies-duplicated',
+                output,
+                [
+                  `# Multi Tool — duplicated cookies`,
+                  `# source: ${cookies.length} unique x ${copies} ${copies === 1 ? 'copy' : 'copies'}`,
+                  `# no server call was made; cookies were not revalidated`,
+                ].join('\n'),
+              )
+            }
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold transition-colors ${
+              output.length
+                ? 'border-[#9b56df] bg-[#8d45d1] text-white hover:bg-[#9b52e6]'
+                : 'cursor-not-allowed border-[#38313f] bg-[#1c1921] text-[#777c87]'
+            }`}
+          >
+            <Download size={14} />
+            Сохранить в файл ({output.length})
+          </button>
+        </div>
+
+        <section className="relative overflow-hidden rounded-2xl border border-[#332c40] bg-[#191a1f] p-4 shadow-[0_0_34px_rgba(155,86,223,.08)] sm:p-5">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#a15cff] to-transparent opacity-70" />
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="min-w-[150px]">
+              <span className="mb-1.5 block text-[11px] font-semibold text-[#a7acb5]">Копий на cookie</span>
+              <span className="relative block">
+                <select
+                  value={copies}
+                  onChange={(event) => setCopies(Number(event.target.value))}
+                  className="h-10 w-full appearance-none rounded-lg border border-[#363b44] bg-[#23262d] px-3 pr-9 text-[12px] font-semibold text-[#e1ddd6] outline-none transition-colors focus:border-primary"
+                >
+                  {[2, 3, 5, 10, 20].map((value) => (
+                    <option key={value} value={value}>{value}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#888f9a]" size={15} />
+              </span>
+            </div>
+
+            <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#363b44] bg-[#23262d] px-3 text-[12px] font-semibold text-[#e1ddd6]">
+              <input
+                type="checkbox"
+                checked={separators}
+                onChange={(event) => setSeparators(event.target.checked)}
+                className="h-4 w-4 accent-[#9b56df]"
+              />
+              Пустая строка между копиями
+            </label>
+          </div>
+        </section>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {stats.map(({ label, value, icon: Icon, accent }) => (
+            <div key={label} className="rise-in rounded-xl border border-[#332c28] bg-[#1b1b1f] px-4 py-4">
+              <Icon size={17} className={accent} />
+              <div className="mt-3 font-mono text-2xl font-bold text-[#e9e3ec]">{value}</div>
+              <div className="mt-1 text-[9px] font-bold uppercase tracking-[.14em] text-[#777080]">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <section className="mt-6">
+          <div className="mb-3 flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#3d2f4a] bg-[#241a30] text-[#bb7cff]">
+              <FileText size={16} />
+            </div>
+            <div>
+              <h2 className="text-[12px] font-bold text-[#e5ddd5]">Исходные cookie</h2>
+              <p className="mt-0.5 text-[10px] text-[#77716b]">
+                Значения скрыты · в файле сохраняются полностью
+              </p>
+            </div>
+          </div>
+
+          {cookies.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#403832] bg-[#1d1b1d] px-4 py-5 text-center text-[10px] text-[#817a74]">
+              Добавь cookie-файл в меню режимов, чтобы запустить дубликатор.
+            </div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {cookies.map((cookie, index) => (
+                <div
+                  key={`${cookie.slice(-12)}-${index}`}
+                  className="rise-in flex items-center gap-2 rounded-xl border border-[#332c28] bg-[#1b1b1f] px-3.5 py-3"
+                >
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#241a30] text-[#bb7cff]">
+                    <Cookie size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-mono text-[10px] text-[#8c8272]">
+                      {cookie.slice(0, 34)}…{cookie.slice(-10)}
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-[#5f5a68]">
+                      повторов: {copies}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1560,7 +1781,7 @@ function ModeMenu({
 }: {
   onClose: () => void;
   onStartCookieCheck: (files: CookieFileSummary[]) => void;
-  onStartCookieRun: (mode: ValidateMode, files: CookieFileSummary[]) => void;
+  onStartCookieRun: (mode: ValidateMode | 'duplicate', files: CookieFileSummary[]) => void;
 }) {
   const [activeMenu, setActiveMenu] = useState<
     | 'modes'
@@ -1665,8 +1886,9 @@ function ModeMenu({
     }
   };
 
-  const renderCookieFiles = (mode: 'check' | ValidateMode) => {
+  const renderCookieFiles = (mode: 'check' | ValidateMode | 'duplicate') => {
     const isCheck = mode === 'check';
+    const isDuplicate = mode === 'duplicate';
     const validCount = cookieFiles.reduce((sum, file) => sum + file.valid, 0);
     const totalCount = cookieFiles.reduce((sum, file) => sum + file.total, 0);
     const invalidCount = cookieFiles.reduce((sum, file) => sum + file.invalid, 0);
@@ -1674,12 +1896,16 @@ function ModeMenu({
     const canStart = validCount > 0 && !isInspectingCookies;
     const startLabel = isCheck
       ? 'Запустить проверку'
-      : mode === 'validate'
-        ? 'Запустить валидацию'
-        : 'Запустить обновление';
+      : isDuplicate
+        ? 'Открыть дубликатор'
+        : mode === 'validate'
+          ? 'Запустить валидацию'
+          : 'Запустить обновление';
     const hintLabel = isCheck
       ? 'Cookie автоматически извлекаются из текста'
-      : 'Cookie проверяются на валидность через API';
+      : isDuplicate
+        ? 'Дублирование без обращения к серверу'
+        : 'Cookie проверяются на валидность через API';
 
     const handleDrop = (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -1773,7 +1999,7 @@ function ModeMenu({
             if (isCheck) {
               onStartCookieCheck(cookieFiles);
             } else {
-              onStartCookieRun(mode, cookieFiles);
+              onStartCookieRun(isDuplicate ? 'duplicate' : mode, cookieFiles);
             }
             onClose();
           }}
@@ -1979,6 +2205,10 @@ function ModeMenu({
       return renderCookieFiles('refresh');
     }
 
+    if (activeMenu === 'duplicator') {
+      return renderCookieFiles('duplicate');
+    }
+
     if (activeMenu === 'passport') {
       return (
         <MenuActionStack>
@@ -2098,7 +2328,7 @@ function AppFrame({
   isClosed: boolean;
   onStart: () => void;
   onStartCookieCheck: (files: CookieFileSummary[]) => void;
-  onStartCookieRun: (mode: ValidateMode, files: CookieFileSummary[]) => void;
+  onStartCookieRun: (mode: ValidateMode | 'duplicate', files: CookieFileSummary[]) => void;
   modeMenuOpen: boolean;
   onOpenModeMenu: () => void;
   onCloseModeMenu: () => void;
@@ -2274,6 +2504,7 @@ function Router() {
   const [cookieCheckFiles, setCookieCheckFiles] = useState<CookieFileSummary[]>([]);
   const [validatorFiles, setValidatorFiles] = useState<CookieFileSummary[]>([]);
   const [refresherFiles, setRefresherFiles] = useState<CookieFileSummary[]>([]);
+  const [duplicatorFiles, setDuplicatorFiles] = useState<CookieFileSummary[]>([]);
   const [gameIds, setGameIds] = useState<string[]>(loadGameIds);
   const [gameChecks, setGameChecks] = useState<GameCheckConfig[]>(loadGameChecks);
 
@@ -2300,7 +2531,10 @@ function Router() {
         setView('cookie-checker');
       }}
       onStartCookieRun={(mode, files) => {
-        if (mode === 'validate') {
+        if (mode === 'duplicate') {
+          setDuplicatorFiles(files);
+          setView('duplicator');
+        } else if (mode === 'validate') {
           setValidatorFiles(files);
           setView('validator');
         } else {
@@ -2380,6 +2614,8 @@ function Router() {
           <CookieRunView files={validatorFiles} mode="validate" />
         ) : view === 'refresher' ? (
           <CookieRunView files={refresherFiles} mode="refresh" />
+        ) : view === 'duplicator' ? (
+          <DuplicatorView files={duplicatorFiles} />
         ) : (
           <AutoCookieView />
         )}
