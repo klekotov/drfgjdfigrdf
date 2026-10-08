@@ -1,0 +1,372 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: cookie-checker
+    description: Roblox Cookie Checker operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /health:
+    get:
+      operationId: bothostHealthCheck
+      tags: [health]
+      summary: Compatibility health check for hosted relay deployments
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BothostHealth"
+  /validate:
+    post:
+      operationId: validateCookie
+      tags: [cookie-checker]
+      summary: Validate one Roblox cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CookieInput"
+      responses:
+        "200":
+          description: Cookie validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookieCheckAccount"
+  /validate-batch:
+    post:
+      operationId: validateCookies
+      tags: [cookie-checker]
+      summary: Validate a batch of Roblox cookies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CookieBatchInput"
+      responses:
+        "200":
+          description: Validation results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookieValidationBatchResponse"
+        "400":
+          description: Invalid batch body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /refresh:
+    post:
+      operationId: refreshCookie
+      tags: [cookie-checker]
+      summary: Refresh account details for one cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CookieInput"
+      responses:
+        "200":
+          description: Refreshed account details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookieCheckAccount"
+  /refresh-batch:
+    post:
+      operationId: refreshCookies
+      tags: [cookie-checker]
+      summary: Refresh account details for a batch of cookies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CookieBatchInput"
+      responses:
+        "200":
+          description: Refresh results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookieRefreshBatchResponse"
+        "400":
+          description: Invalid batch body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /check-full:
+    post:
+      operationId: checkCookieFull
+      tags: [cookie-checker]
+      summary: Check one cookie and retrieve account statistics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FullCookieInput"
+      responses:
+        "200":
+          description: Full account check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookieCheckAccount"
+  /check-full-batch:
+    post:
+      operationId: checkCookiesFull
+      tags: [cookie-checker]
+      summary: Check a batch of cookies and retrieve account statistics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FullCookieBatchInput"
+      responses:
+        "200":
+          description: Full account check results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookieCheckerBatchResponse"
+        "400":
+          description: Invalid batch body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    BothostHealth:
+      type: object
+      required: [ok, service]
+      properties:
+        ok:
+          type: boolean
+        service:
+          type: string
+    CookieInput:
+      type: object
+      required: [cookie]
+      properties:
+        cookie:
+          type: string
+          minLength: 1
+          maxLength: 4096
+    CookieBatchInput:
+      type: object
+      required: [cookies]
+      properties:
+        cookies:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            maxLength: 4096
+    FullCookieInput:
+      allOf:
+        - $ref: "#/components/schemas/CookieInput"
+        - type: object
+          properties:
+            gameIds:
+              type: array
+              items:
+                type: integer
+                minimum: 1
+    FullCookieBatchInput:
+      allOf:
+        - $ref: "#/components/schemas/CookieBatchInput"
+        - type: object
+          properties:
+            gameIds:
+              type: array
+              items:
+                type: integer
+                minimum: 1
+    CookieCheckAccount:
+      type: object
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
+        userId:
+          type: ["integer", "null"]
+        username:
+          type: ["string", "null"]
+        displayName:
+          type: ["string", "null"]
+        balance:
+          type: ["number", "null"]
+        premium:
+          type: ["boolean", "null"]
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentCard"
+        korblox:
+          type: boolean
+        headless:
+          type: boolean
+        badges:
+          type: integer
+        billing:
+          oneOf:
+            - type: integer
+            - type: number
+            - type: string
+            - type: "null"
+        rap:
+          type: ["number", "null"]
+        groupBalance:
+          type: number
+        ownedGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwnedGroup"
+        donateYear:
+          type: ["number", "null"]
+        donateAllTime:
+          type: ["number", "null"]
+        ingameDonate:
+          type: array
+          items:
+            $ref: "#/components/schemas/GameDonation"
+        playtime:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaytimeEntry"
+        error:
+          type: string
+    PaymentCard:
+      type: object
+      required: [brand, maskedIdentifier]
+      properties:
+        brand:
+          type: string
+        maskedIdentifier:
+          type: string
+    OwnedGroup:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+    GameDonation:
+      type: object
+      required: [game, amount]
+      properties:
+        game:
+          type: string
+        amount:
+          type: number
+    PlaytimeEntry:
+      type: object
+      required: [game, minutes]
+      properties:
+        game:
+          type: string
+        minutes:
+          type: number
+    CookieValidationBatchResponse:
+      type: object
+      required: [ok, total, valid, invalid, results]
+      properties:
+        ok:
+          type: boolean
+        total:
+          type: integer
+        valid:
+          type: integer
+        invalid:
+          type: integer
+        elapsed:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CookieCheckAccount"
+    CookieRefreshBatchResponse:
+      type: object
+      required: [ok, total, refreshed, failed, results]
+      properties:
+        ok:
+          type: boolean
+        total:
+          type: integer
+        refreshed:
+          type: integer
+        failed:
+          type: integer
+        elapsed:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CookieCheckAccount"
+    CookieCheckerBatchResponse:
+      type: object
+      required: [ok, total, complete, failed, results]
+      properties:
+        ok:
+          type: boolean
+        total:
+          type: integer
+        complete:
+          type: integer
+        failed:
+          type: integer
+        elapsed:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CookieCheckAccount"
+    ErrorResponse:
+      type: object
+      required: [ok, error]
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: string
+
