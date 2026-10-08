@@ -316,7 +316,7 @@ export async function checkCookiesViaApi(
   } satisfies CookieCheckResponse;
 }
 
-export type ValidateMode = 'validate';
+export type ValidateMode = 'validate' | 'refresh';
 
 export type CookieRunResponse = {
   ok: boolean;
