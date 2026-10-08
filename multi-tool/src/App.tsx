@@ -773,6 +773,32 @@ function CookieRunView({ files }: { files: CookieFileSummary[] }) {
               </p>
             </div>
           </div>
+          <button
+            type="button"
+            disabled={status !== 'success' || validCount === 0}
+            onClick={() => {
+              // Results keep the input order, so each live cookie maps back
+              // to the entry the server confirmed as valid.
+              const live = cookies.filter((_, index) => accounts[index]?.valid === true);
+              exportCookieFile(
+                'cookies-valid',
+                live,
+                [
+                  `# Multi Tool — valid cookies`,
+                  `# checked: ${accounts.length}, valid: ${live.length}`,
+                  `# cookies the server confirmed as alive`,
+                ].join('\n'),
+              );
+            }}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-bold transition-colors ${
+              status === 'success' && validCount > 0
+                ? 'border-[#9b56df] bg-[#8d45d1] text-white hover:bg-[#9b52e6]'
+                : 'cursor-not-allowed border-[#38313f] bg-[#1c1921] text-[#777c87]'
+            }`}
+          >
+            <Download size={14} />
+            Сохранить в файл ({validCount})
+          </button>
         </div>
 
         <section className="relative overflow-hidden rounded-2xl border border-[#3c3028] bg-[#191a1f] p-4 shadow-[0_0_34px_rgba(255,138,36,.08)] sm:p-5">
