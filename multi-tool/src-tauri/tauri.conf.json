@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Multi Tool",
+  "version": "0.0.0",
+  "identifier": "com.multitool.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm run dev:tauri",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm run build:tauri",
+    "frontendDist": "../dist/public"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Multi Tool",
+        "width": 1240,
+        "height": 780,
+        "minWidth": 920,
+        "minHeight": 600,
+        "decorations": false,
+        "transparent": false,
+        "backgroundColor": "#17191f",
+        "resizable": true,
+        "devtools": false,
+        "zoomHotkeysEnabled": false,
+        "browserExtensionsEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "nsis": {
+        "startMenuFolder": "Multi Tool",
+        "installerHooks": "nsis/hooks.nsh"
+      }
+    }
+  }
+}

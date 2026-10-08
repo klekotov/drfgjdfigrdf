@@ -1,0 +1,23 @@
+[package]
+name = "multi-tool"
+version = "0.0.0"
+description = "Multi Tool desktop utility"
+authors = ["Multi Tool"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+debug = false
