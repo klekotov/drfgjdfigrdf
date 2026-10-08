@@ -16,6 +16,19 @@ if (Number.isNaN(port) || port <= 0) {
 
 const basePath = process.env.BASE_PATH ?? '/';
 
+// In dev the browser and the API run on different origins, so the client
+// calls a relative /api path and Vite forwards it to the Node server.
+// Absolute localhost URLs in VITE_RELAY_URL point at the viewer's own
+// machine and fail with "Failed to fetch".
+const apiProxyTarget = process.env.VITE_API_PROXY ?? 'http://127.0.0.1:8080';
+
+const apiProxy = {
+  '/api': {
+    target: apiProxyTarget,
+    changeOrigin: true,
+  },
+};
+
 function integrityManifestPlugin(): Plugin {
   return {
     name: 'multi-tool-integrity-manifest',
@@ -130,6 +143,7 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: apiProxy,
     fs: {
       strict: true,
     },
@@ -138,5 +152,6 @@ export default defineConfig({
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: apiProxy,
   },
 });
