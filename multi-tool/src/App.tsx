@@ -4,8 +4,12 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ErrorBoundary } from '@/components/error-boundary';
 import {
   checkCookiesViaApi,
+  refreshCookiesViaApi,
+  validateCookiesViaApi,
   type CookieCheckResponse,
+  type CookieRunResponse,
   type GameCheckConfig,
+  type ValidateMode,
 } from '@/lib/cookie-checker-api';
 import { extractRobloxCookies } from '@/lib/cookie-file-parser';
 import { Toaster } from '@/components/ui/toaster';
@@ -56,7 +60,7 @@ import {
 
 const queryClient = new QueryClient();
 
-type View = 'dashboard' | 'settings' | 'looter' | 'auto-cookie' | 'cookie-checker';
+type View = 'dashboard' | 'settings' | 'looter' | 'auto-cookie' | 'cookie-checker' | 'validator' | 'refresher';
 const GAME_IDS_STORAGE_KEY = 'multi-tool-cookie-checker-game-ids';
 const GAME_CHECKS_STORAGE_KEY = 'multi-tool-cookie-checker-game-checks';
 
@@ -647,6 +651,300 @@ type CookieFileSummary = {
 async function inspectCookieFile(file: File): Promise<CookieFileSummary> {
   const contents = await file.text();
   return { name: file.name, ...extractRobloxCookies(contents) };
+}
+
+type CheckRunStatus = 'idle' | 'checking' | 'success' | 'error';
+
+function CookieRunView({
+  files,
+  mode,
+}: {
+  files: CookieFileSummary[];
+  mode: ValidateMode;
+}) {
+  const isValidate = mode === 'validate';
+  const allCookies = useMemo(() => files.flatMap((file) => file.cookies), [files]);
+  const cookies = useMemo(() => Array.from(new Set(allCookies)), [allCookies]);
+  const duplicateCount = allCookies.length - cookies.length;
+  const fileCount = files.length;
+
+  const [status, setStatus] = useState<CheckRunStatus>('idle');
+  const [result, setResult] = useState<CookieRunResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!cookies.length) {
+      setStatus('idle');
+      setResult(null);
+      setError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setStatus('checking');
+    setResult(null);
+    setError(null);
+
+    const run = isValidate
+      ? validateCookiesViaApi(cookies, controller.signal)
+      : refreshCookiesViaApi(cookies, controller.signal);
+
+    run
+      .then((nextResult) => {
+        setResult(nextResult);
+        setStatus('success');
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        setStatus('error');
+        setError(cause instanceof Error ? cause.message : 'Не удалось получить ответ от API сервера.');
+      });
+
+    return () => controller.abort();
+  }, [cookies, isValidate]);
+
+  const accounts = result?.results ?? [];
+  const validCount = accounts.filter((account) => account.valid).length;
+  const invalidCount = accounts.length - validCount;
+  const totalRobux = accounts.reduce(
+    (sum, account) => sum + (typeof account.balance === 'number' ? account.balance : 0),
+    0,
+  );
+  const premiumCount = accounts.filter((account) => account.premium === true).length;
+  const cardCount = accounts.reduce(
+    (sum, account) =>
+      sum + (Array.isArray(account.cards) ? account.cards.length : 0),
+    0,
+  );
+  const korbloxCount = accounts.filter((account) => account.korblox === true).length;
+  const headlessCount = accounts.filter((account) => account.headless === true).length;
+
+  const progressTotal = result?.total ?? cookies.length;
+  const progressDone = result?.passed ?? 0;
+  const progress = progressTotal > 0
+    ? Math.min(100, Math.round((progressDone / progressTotal) * 100))
+    : 0;
+
+  const statusLabel = status === 'checking'
+    ? (isValidate ? 'Проверка cookie через сервер' : 'Обновление данных через сервер')
+    : status === 'success'
+      ? (isValidate ? 'Проверка завершена' : 'Данные обновлены')
+      : status === 'error'
+        ? 'Ошибка запроса'
+        : 'Ожидание запуска';
+
+  const title = isValidate ? 'Validator' : 'Refresher';
+  const subtitle = isValidate
+    ? 'Проверка cookie на валидность'
+    : 'Актуализация баланса, Premium и карт';
+
+  const stats = [
+    { label: 'Valid', value: validCount, icon: ShieldCheck, accent: 'text-[#7de5b4]' },
+    { label: 'Invalid', value: invalidCount, icon: ShieldOff, accent: 'text-[#ed8c8c]' },
+    { label: 'Duplicates', value: duplicateCount, icon: Copy, accent: 'text-[#f5c394]' },
+    { label: 'Total', value: result?.total ?? cookies.length, icon: Cookie, accent: 'text-[#8fb8ff]' },
+  ];
+
+  const details = isValidate
+    ? [
+        { label: 'Robux', value: totalRobux, icon: Coins },
+        { label: 'Premium', value: premiumCount, icon: Crown },
+        { label: 'Cards', value: cardCount, icon: WalletCards },
+        { label: 'Korblox', value: korbloxCount, icon: ShieldCheck },
+        { label: 'Headless', value: headlessCount, icon: ShieldUser },
+      ]
+    : [
+        { label: 'Robux', value: totalRobux, icon: Coins },
+        { label: 'Premium', value: premiumCount, icon: Crown },
+        { label: 'Cards', value: cardCount, icon: WalletCards },
+        { label: 'Korblox', value: korbloxCount, icon: ShieldCheck },
+        { label: 'Headless', value: headlessCount, icon: ShieldUser },
+      ];
+
+  return (
+    <div
+      className="tab-view min-h-full flex-1 overflow-auto bg-[#17191f] p-4 text-[#e7e2da] sm:p-6"
+      aria-label={title}
+    >
+      <div className="mx-auto max-w-[1180px]">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#624129] bg-[#2b211b] text-primary">
+              {isValidate ? <BadgeCheck size={18} /> : <RefreshCw size={18} />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-bold text-[#f0ebe3]">{title}</h1>
+                <span className="rounded-full border border-[#5b421e] bg-[#302515] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.08em] text-[#f5c394]">
+                  Node API
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-[#777c87]">
+                {subtitle} · {fileCount} {fileCount === 1 ? 'файл' : 'файла'} · {cookies.length} в очереди
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <section className="relative overflow-hidden rounded-2xl border border-[#3c3028] bg-[#191a1f] p-4 shadow-[0_0_34px_rgba(255,138,36,.08)] sm:p-5">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#ff8a24] to-transparent opacity-80" />
+          <div className="grid gap-4 lg:grid-cols-[190px_1fr] lg:items-center">
+            <div className="flex items-center gap-4 lg:flex-col lg:justify-center">
+              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center rounded-full border border-[#ff8a24] bg-[#2b2018] shadow-[0_0_30px_rgba(255,138,36,.2)]">
+                <div className="absolute inset-2 rounded-full border border-[#ffad65]/30" />
+                <div className="text-center">
+                  <div className="text-3xl font-black text-[#ede4f7]">{progress}%</div>
+                  <div className="mt-1 text-[9px] font-bold uppercase tracking-[.18em] text-[#ad8769]">готово</div>
+                </div>
+              </div>
+              <div className="lg:text-center">
+                <div className="text-[11px] font-bold text-[#e1d1c4]">{statusLabel}</div>
+                <div className="mt-1 text-[10px] text-[#68616f]">
+                  {status === 'error'
+                    ? error
+                    : 'Cookie не отображаются и не сохраняются в интерфейсе'}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              {[
+                { label: 'Результат', value: result?.elapsed ?? (status === 'checking' ? '...' : '—'), icon: Activity },
+                { label: 'Обработано', value: `${progressDone} / ${progressTotal}`, icon: CheckCircle2 },
+                { label: 'Готово', value: `${progress}%`, icon: LoaderCircle },
+              ].map(({ label, value, icon: Icon }, index) => (
+                <div key={label} className={`rise-in-delay-${index} rounded-xl border border-[#332c28] bg-[#1e1d20] px-3 py-3`}>
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.1em] text-[#8f8178]">
+                    <Icon size={14} className={index === 2 && status === 'checking' ? 'animate-spin text-primary' : 'text-primary'} />
+                    {label}
+                  </div>
+                  <div className="mt-2 font-mono text-xl font-bold text-[#e8e1ee]">{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {stats.map(({ label, value, icon: Icon, accent }) => (
+            <div key={label} className="rise-in rounded-xl border border-[#332c28] bg-[#1b1b1f] px-4 py-4">
+              <Icon size={17} className={accent} />
+              <div className="mt-3 font-mono text-2xl font-bold text-[#e9e3ec]">{value}</div>
+              <div className="mt-1 text-[9px] font-bold uppercase tracking-[.14em] text-[#777080]">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {details.map(({ label, value, icon: Icon }) => (
+            <div key={label} className="rounded-xl border border-[#332c28] bg-[#1b1b1f] px-3 py-3 transition-colors hover:border-[#68452d]">
+              <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[.12em] text-[#8c7d73]">
+                <Icon size={13} className="text-primary" />
+                {label}
+              </div>
+              <div className="mt-2 font-mono text-lg font-bold text-[#e2d9d1]">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <section className="mt-6">
+          <div className="mb-3 flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#624129] bg-[#2b211b] text-primary">
+              <UsersRound size={16} />
+            </div>
+            <div>
+              <h2 className="text-[12px] font-bold text-[#e5ddd5]">Аккаунты</h2>
+              <p className="mt-0.5 text-[10px] text-[#77716b]">
+                {accounts.length ? `${accounts.length} записей` : 'Ожидание ответа сервера'}
+              </p>
+            </div>
+          </div>
+
+          {accounts.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#403832] bg-[#1d1b1d] px-4 py-5 text-center text-[10px] text-[#817a74]">
+              Добавь cookie-файл в меню режимов, чтобы запустить {title.toLowerCase()}.
+            </div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {accounts.map((account, index) => (
+                <div
+                  key={`${account.userId ?? 'unknown'}-${index}`}
+                  className={`rise-in rounded-xl border px-3.5 py-3 ${
+                    account.valid
+                      ? 'border-[#2f4a3d] bg-[#18211d]'
+                      : 'border-[#4a2f2f] bg-[#211919]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                        account.valid
+                          ? 'bg-[#1f3a2e] text-[#7de5b4]'
+                          : 'bg-[#3a1f1f] text-[#ed8c8c]'
+                      }`}>
+                        {account.valid ? <ShieldCheck size={14} /> : <ShieldOff size={14} />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-[12px] font-bold text-[#e4ded6]">
+                          {account.username ?? 'Неизвестный аккаунт'}
+                        </div>
+                        <div className="truncate text-[10px] text-[#77716b]">
+                          {account.displayName ?? '—'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="font-mono text-[10px] text-[#8c8272]">
+                        {account.userId ?? '—'}
+                      </div>
+                      <div className={`text-[9px] font-bold uppercase tracking-[.1em] ${
+                        account.valid ? 'text-[#7de5b4]' : 'text-[#ed8c8c]'
+                      }`}>
+                        {account.valid ? 'valid' : 'invalid'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {account.valid && !isValidate && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-[#2a3a32] pt-2.5">
+                      {[
+                        { label: 'Robux', value: account.balance ?? 0 },
+                        { label: 'Premium', value: account.premium === true ? 'да' : 'нет' },
+                        { label: 'Cards', value: Array.isArray(account.cards) ? account.cards.length : 0 },
+                        { label: 'Korblox', value: account.korblox === true ? 'да' : 'нет' },
+                        { label: 'Headless', value: account.headless === true ? 'да' : 'нет' },
+                      ].map((item) => (
+                        <span
+                          key={item.label}
+                          className="rounded-md border border-[#2f4a3d] bg-[#1b2a23] px-2 py-0.5 text-[9px] font-semibold text-[#a8d8c1]"
+                        >
+                          {item.label}: <span className="font-mono">{item.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {account.valid && isValidate && (
+                    <div className="mt-2.5 border-t border-[#2a3a32] pt-2.5">
+                      <span className="rounded-md border border-[#2f4a3d] bg-[#1b2a23] px-2 py-0.5 text-[9px] font-semibold text-[#a8d8c1]">
+                        Cookie действителен
+                      </span>
+                    </div>
+                  )}
+
+                  {!account.valid && account.error && (
+                    <div className="mt-2.5 border-t border-[#4a2f2f] pt-2.5 text-[10px] text-[#ed9c9c]">
+                      {account.error}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
 }
 
 function CookieCheckerView({
@@ -1319,9 +1617,11 @@ function MenuActionStack({ children }: { children: ReactNode }) {
 function ModeMenu({
   onClose,
   onStartCookieCheck,
+  onStartCookieRun,
 }: {
   onClose: () => void;
   onStartCookieCheck: (files: CookieFileSummary[]) => void;
+  onStartCookieRun: (mode: ValidateMode, files: CookieFileSummary[]) => void;
 }) {
   const [activeMenu, setActiveMenu] = useState<
     | 'modes'
@@ -1339,7 +1639,6 @@ function ModeMenu({
     | 'get-link'
   >('modes');
   const [passportType, setPassportType] = useState('Смена данных');
-  const [refreshType, setRefreshType] = useState('Убить все сессии');
   const [country, setCountry] = useState('Россия');
   const [age, setAge] = useState('13+');
   const [accountType, setAccountType] = useState('13+');
@@ -1427,12 +1726,23 @@ function ModeMenu({
     }
   };
 
-  const renderCookieChecker = () => {
+  const renderCookieFiles = (mode: 'check' | ValidateMode) => {
+    const isCheck = mode === 'check';
     const validCount = cookieFiles.reduce((sum, file) => sum + file.valid, 0);
     const totalCount = cookieFiles.reduce((sum, file) => sum + file.total, 0);
     const invalidCount = cookieFiles.reduce((sum, file) => sum + file.invalid, 0);
     const duplicateCount = cookieFiles.reduce((sum, file) => sum + file.duplicates, 0);
     const canStart = validCount > 0 && !isInspectingCookies;
+    const startLabel = isCheck
+      ? 'Запустить проверку'
+      : mode === 'validate'
+        ? 'Запустить валидацию'
+        : 'Запустить обновление';
+    const hintLabel = mode === 'refresh'
+      ? 'Cookie обновляют баланс, Premium и карты'
+      : isCheck
+        ? 'Cookie автоматически извлекаются из текста'
+        : 'Cookie проверяются на валидность через API';
 
     const handleDrop = (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -1469,7 +1779,7 @@ function ModeMenu({
           <div className="text-[12px] font-bold text-[#dcd3e5]">Перетащите файлы сюда</div>
           <div className="mt-1 text-[10px] text-[#756c80]">или нажмите для выбора текстового файла</div>
           <div className="mt-3 rounded-full border border-[#32283d] bg-[#1d1824] px-2.5 py-1 text-[9px] font-semibold text-[#8c7d9a]">
-            Cookie автоматически извлекаются из текста
+            {hintLabel}
           </div>
         </div>
 
@@ -1523,7 +1833,11 @@ function ModeMenu({
           type="button"
           disabled={!canStart}
           onClick={() => {
-            onStartCookieCheck(cookieFiles);
+            if (isCheck) {
+              onStartCookieCheck(cookieFiles);
+            } else {
+              onStartCookieRun(mode, cookieFiles);
+            }
             onClose();
           }}
           className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-[12px] font-bold transition-all ${
@@ -1533,7 +1847,7 @@ function ModeMenu({
           }`}
         >
           <ArrowRight size={16} />
-          Запустить проверку
+          {startLabel}
           {!canStart && <span className="text-[10px] font-medium opacity-60">добавь cookie-файл</span>}
         </button>
       </div>
@@ -1703,7 +2017,11 @@ function ModeMenu({
 
   const renderVerticalMenu = () => {
     if (activeMenu === 'cookie-checker') {
-      return renderCookieChecker();
+      return renderCookieFiles('check');
+    }
+
+    if (activeMenu === 'validator') {
+      return renderCookieFiles('validate');
     }
 
     if (activeMenu === 'ip-lock' || activeMenu === 'verified-age' || activeMenu === 'account' || activeMenu === 'account-advanced' || activeMenu === 'get-link') {
@@ -1721,18 +2039,7 @@ function ModeMenu({
     }
 
     if (activeMenu === 'refresher') {
-      return (
-        <MenuActionStack>
-          <ExportCookieAction />
-          <SelectField
-            label="Тип фреша"
-            value={refreshType}
-            onChange={setRefreshType}
-            options={['Убить все сессии', 'Обычный фреш']}
-          />
-          <PlaceholderAction accent icon={CheckCircle2} label="Start Fresh" />
-        </MenuActionStack>
-      );
+      return renderCookieFiles('refresh');
     }
 
     if (activeMenu === 'passport') {
@@ -1836,6 +2143,7 @@ function AppFrame({
   isClosed,
   onStart,
   onStartCookieCheck,
+  onStartCookieRun,
   modeMenuOpen,
   onOpenModeMenu,
   onCloseModeMenu,
@@ -1853,6 +2161,7 @@ function AppFrame({
   isClosed: boolean;
   onStart: () => void;
   onStartCookieCheck: (files: CookieFileSummary[]) => void;
+  onStartCookieRun: (mode: ValidateMode, files: CookieFileSummary[]) => void;
   modeMenuOpen: boolean;
   onOpenModeMenu: () => void;
   onCloseModeMenu: () => void;
@@ -2007,6 +2316,7 @@ function AppFrame({
                 <ModeMenu
                   onClose={onCloseModeMenu}
                   onStartCookieCheck={onStartCookieCheck}
+                  onStartCookieRun={onStartCookieRun}
                 />
               )}
             </div>
@@ -2025,6 +2335,8 @@ function Router() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [cookieCheckFiles, setCookieCheckFiles] = useState<CookieFileSummary[]>([]);
+  const [validatorFiles, setValidatorFiles] = useState<CookieFileSummary[]>([]);
+  const [refresherFiles, setRefresherFiles] = useState<CookieFileSummary[]>([]);
   const [gameIds, setGameIds] = useState<string[]>(loadGameIds);
   const [gameChecks, setGameChecks] = useState<GameCheckConfig[]>(loadGameChecks);
 
@@ -2049,6 +2361,17 @@ function Router() {
         setStarted(true);
         setModeMenuOpen(false);
         setView('cookie-checker');
+      }}
+      onStartCookieRun={(mode, files) => {
+        if (mode === 'validate') {
+          setValidatorFiles(files);
+          setView('validator');
+        } else {
+          setRefresherFiles(files);
+          setView('refresher');
+        }
+        setStarted(true);
+        setModeMenuOpen(false);
       }}
       modeMenuOpen={modeMenuOpen}
       onOpenModeMenu={() => setModeMenuOpen(true)}
@@ -2116,6 +2439,10 @@ function Router() {
             gameIds={gameIds}
             gameChecks={gameChecks}
           />
+        ) : view === 'validator' ? (
+          <CookieRunView files={validatorFiles} mode="validate" />
+        ) : view === 'refresher' ? (
+          <CookieRunView files={refresherFiles} mode="refresh" />
         ) : (
           <AutoCookieView />
         )}

@@ -232,29 +232,19 @@ function normalizeAccount(value: unknown): CookieCheckAccount {
   };
 }
 
-export async function checkCookiesViaApi(
-  cookies: string[],
+async function postJson(
+  path: string,
+  body: unknown,
   signal?: AbortSignal,
-  gameIds: string[] = [],
-  gameChecks: GameCheckConfig[] = [],
 ) {
-  const response = await fetch(
-    `${apiBaseUrl()}/check-full-batch`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        cookies,
-        gameIds: gameIds
-          .map(Number)
-          .filter((id) => Number.isSafeInteger(id) && id > 0),
-        gameChecks,
-      }),
-      signal,
+  const response = await fetch(`${apiBaseUrl()}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
     },
-  );
+    body: JSON.stringify(body),
+    signal,
+  });
 
   const payload = await response.json().catch(() => null);
 
@@ -266,35 +256,112 @@ export async function checkCookiesViaApi(
     throw new Error(message);
   }
 
-  if (
-    !payload
-    || typeof payload !== 'object'
-    || !Array.isArray(payload.results)
-  ) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('API сервер вернул некорректный ответ.');
+  }
+
+  return payload as Record<string, unknown>;
+}
+
+function readResults(payload: Record<string, unknown>) {
+  const results = Array.isArray(payload.results) ? payload.results : [];
+
+  return results.map(normalizeAccount);
+}
+
+function readCount(
+  payload: Record<string, unknown>,
+  key: string,
+  fallback: number,
+) {
+  return typeof payload[key] === 'number' ? (payload[key] as number) : fallback;
+}
+
+export async function checkCookiesViaApi(
+  cookies: string[],
+  signal?: AbortSignal,
+  gameIds: string[] = [],
+  gameChecks: GameCheckConfig[] = [],
+) {
+  const payload = await postJson(
+    '/check-full-batch',
+    {
+      cookies,
+      gameIds: gameIds
+        .map(Number)
+        .filter((id) => Number.isSafeInteger(id) && id > 0),
+      gameChecks,
+    },
+    signal,
+  );
+
+  if (!Array.isArray(payload.results)) {
     throw new Error('API сервер вернул ответ без списка результатов.');
   }
 
-  const raw = payload as Record<string, unknown>;
-  const rawResults = Array.isArray(raw.results)
-    ? raw.results
-    : [];
-  const results = rawResults.map(normalizeAccount);
-  const complete = typeof raw.complete === 'number'
-    ? raw.complete
-    : results.filter((account) => account.valid).length;
+  const results = readResults(payload);
+  const complete = readCount(
+    payload,
+    'complete',
+    results.filter((account) => account.valid).length,
+  );
 
   return {
-    ok: raw.ok !== false,
-    total: typeof raw.total === 'number'
-      ? raw.total
-      : results.length,
+    ok: payload.ok !== false,
+    total: readCount(payload, 'total', results.length),
     complete,
-    failed: typeof raw.failed === 'number'
-      ? raw.failed
-      : results.length - complete,
-    elapsed: typeof raw.elapsed === 'string'
-      ? raw.elapsed
-      : undefined,
+    failed: readCount(payload, 'failed', results.length - complete),
+    elapsed: typeof payload.elapsed === 'string' ? payload.elapsed : undefined,
     results,
   } satisfies CookieCheckResponse;
+}
+
+export type ValidateMode = 'validate' | 'refresh';
+
+export type CookieRunResponse = {
+  ok: boolean;
+  total: number;
+  passed: number;
+  failed: number;
+  elapsed?: string;
+  results: CookieCheckAccount[];
+};
+
+async function runCookieCheck(
+  mode: ValidateMode,
+  cookies: string[],
+  signal?: AbortSignal,
+) {
+  const isValidate = mode === 'validate';
+  const endpoint = isValidate ? '/validate-batch' : '/refresh-batch';
+  const payload = await postJson(endpoint, { cookies }, signal);
+
+  if (!Array.isArray(payload.results)) {
+    throw new Error('API сервер вернул ответ без списка результатов.');
+  }
+
+  const results = readResults(payload);
+  const passedKey = isValidate ? 'valid' : 'refreshed';
+  const passed = readCount(
+    payload,
+    passedKey,
+    results.filter((account) => account.valid).length,
+  );
+
+  return {
+    ok: payload.ok !== false,
+    total: readCount(payload, 'total', results.length),
+    passed,
+    failed: readCount(payload, 'failed', results.length - passed),
+    elapsed: typeof payload.elapsed === 'string' ? payload.elapsed : undefined,
+    results,
+  } satisfies CookieRunResponse;
+}
+
+export function validateCookiesViaApi(cookies: string[], signal?: AbortSignal) {
+  return runCookieCheck('validate', cookies, signal);
+}
+
+export function refreshCookiesViaApi(cookies: string[], signal?: AbortSignal) {
+  return runCookieCheck('refresh', cookies, signal);
 }
